@@ -1,0 +1,82 @@
+{
+  "sizes": [
+    3,
+    16,
+    24,
+    50,
+    100
+  ],
+  "q_values": [
+    0.1,
+    0.3,
+    0.5,
+    0.7,
+    0.9,
+    0.95,
+    0.99,
+    1.0,
+    1.05,
+    1.2,
+    1.8
+  ],
+  "seeds": [
+    42,
+    43,
+    44,
+    45,
+    46,
+    47,
+    48,
+    49,
+    50,
+    51,
+    52,
+    53,
+    54,
+    55,
+    56,
+    57,
+    58,
+    59,
+    60,
+    61
+  ],
+  "tol": 1e-08,
+  "max_iter": 10000,
+  "neighbors": [
+    2,
+    4,
+    8
+  ],
+  "expected_cases": 3740,
+  "skipped_neighbors_by_size": {
+    "3": [
+      2,
+      4,
+      8
+    ],
+    "16": [],
+    "24": [],
+    "50": [],
+    "100": []
+  },
+  "families": [
+    "dense",
+    "sparse_k2",
+    "sparse_k4",
+    "sparse_k8"
+  ],
+  "sparsity_definition": "Off-diagonal density = k/(n-1); sparsity = 1-density. Diagonal excluded.",
+  "sparse_generation": "Nested row permutations from independent SeedSequence([seed,n,9173]); retained weights match dense. Supports and weights fixed across q. k>=n-1 skipped (dense already included).",
+  "norm": "infinity",
+  "stopping_rule": "||b-Ax||_inf / max(1, ||b||_inf) <= tol",
+  "x_exact": "ones(n)",
+  "x0": "zeros(n)",
+  "generation": "default_rng(seed).uniform(-1, 1, (n,n)); off-diagonal fixed across q; a_ii=sum_j!=i|a_ij|/q",
+  "history": "Includes iteration 0; NaN means non-finite arithmetic, not a measured zero.",
+  "interpretation": "q>=1 alone does not imply divergence. max_iterations is an iteration-budget outcome. rho near 1 is sensitive to floating-point rounding.",
+  "python": "3.14.7",
+  "numpy": "2.5.5",
+  "pandas": "3.1.1",
+  "matplotlib": "3.11.2"
+}
