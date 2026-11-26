@@ -1,7 +1,9 @@
-import argparse
+"""Run both experiment sets in order, then build the three report figures."""
+
 import csv
 import json
 import platform
+import sys
 from importlib.metadata import version
 from pathlib import Path
 
@@ -15,11 +17,16 @@ from prepare import (
 from solve import solve_gauss_seidel, spectral_radius
 from utils import Result
 from visualization import save_plots, summarize
+from report import build_report_bundle
 
 
 sizes = DEFAULT_SIZES
 q_experiments = DEFAULT_Q_VALUES
-DEFAULT_OUTPUT = Path(__file__).resolve().parents[1] / "outputs"
+DEFAULT_OUTPUT = Path(__file__).resolve().parents[1] / "output"
+DEFAULT_TOL = 1e-8
+DEFAULT_MAX_ITERATION = 10000
+DEFAULT_VERBOSE = False
+MODES = ("q-variants", "non-diag-dominance")
 RESULT_COLUMNS = [
     "n", "seed", "q_target", "q_actual", "rho", "iterations", "status",
     "success", "final_residual", "final_error", "message",
@@ -68,44 +75,68 @@ def result_record(result: Result) -> dict:
     ]))
 
 
-def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--sizes", nargs="+", type=int, default=sizes)
-    parser.add_argument("--q-values", nargs="+", type=float, default=q_experiments)
-    parser.add_argument("--seeds", nargs="+", type=int, default=DEFAULT_SEEDS)
-    parser.add_argument("--neighbors", nargs="+", type=int, default=DEFAULT_NEIGHBORS,
-                        help="Additional row-sparse families (off-diagonal nonzeros per row); dense is always included.")
-    parser.add_argument("--dense-only", action="store_true", help="Run only the original dense baseline.")
-    parser.add_argument("--tol", type=float, default=1e-8)
-    parser.add_argument("--max-iter", type=int, default=10000)
-    parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
-    parser.add_argument("--quiet", action="store_true")
-    args = parser.parse_args(argv)
-    if any(k < 1 for k in args.neighbors):
-        parser.error("--neighbors must all be >= 1")
-    if len(set(args.neighbors)) != len(args.neighbors):
-        parser.error("Duplicate --neighbors would repeat experiment cases")
-    neighbors = [] if args.dense_only else args.neighbors
-    if any(n < 2 for n in args.sizes):
-        parser.error("--sizes must all be >= 2")
-    if any(seed < 0 for seed in args.seeds):
-        parser.error("--seeds must all be nonnegative")
-    if any(not np.isfinite(q) or q <= 0 for q in args.q_values):
-        parser.error("--q-values must all be finite and > 0")
-    if not np.isfinite(args.tol) or args.tol <= 0 or args.max_iter < 1:
-        parser.error("--tol must be finite and > 0; --max-iter must be >= 1")
-    for name, values in [("sizes", args.sizes), ("seeds", args.seeds), ("q-values", args.q_values)]:
-        if len(set(values)) != len(values):
-            parser.error(f"Duplicate --{name} would repeat experiment cases")
+def select_q_values(mode: str, q_values=None) -> list[float]:
+    """Select by configured q, without classifying rounded q_actual values."""
+    if mode not in MODES:
+        raise ValueError(f"Unknown mode: {mode}. Choose one of {MODES}.")
+    values = list(q_experiments if q_values is None else q_values)
+    if not values or any(not np.isscalar(q) or not np.isfinite(q) or q <= 0 for q in values):
+        raise ValueError("Configured q values must be nonempty, finite and strictly positive.")
+    if len(set(values)) != len(values):
+        raise ValueError("Configured q values must not contain duplicates.")
+    selected = values if mode == "q-variants" else [q for q in values if q >= 1]
+    if not selected:
+        raise ValueError("non-diag-dominance needs at least one configured q >= 1.")
+    return selected
 
-    args.output_dir.mkdir(parents=True, exist_ok=True)
+
+def run_pipeline(
+    mode: str,
+    *,
+    experiment_sizes=None,
+    q_values=None,
+    experiment_seeds=None,
+    neighbors=None,
+    tol: float = DEFAULT_TOL,
+    max_iteration: int = DEFAULT_MAX_ITERATION,
+    output_dir: Path | None = None,
+    verbose: bool = True,
+):
+    """Execute one mode. Keyword settings support programmatic use and tests.
+
+    Normal experiment settings live in prepare.py and this module's constants.
+    main() runs both modes automatically; this helper supports focused tests.
+    """
+    configured_q = list(q_experiments if q_values is None else q_values)
+    selected_q = select_q_values(mode, configured_q)
+    experiment_sizes = list(sizes if experiment_sizes is None else experiment_sizes)
+    experiment_seeds = list(DEFAULT_SEEDS if experiment_seeds is None else experiment_seeds)
+    neighbors = list(DEFAULT_NEIGHBORS if neighbors is None else neighbors)
+    if not experiment_sizes or any(isinstance(n, (bool, np.bool_)) or not isinstance(n, (int, np.integer)) or n < 2 for n in experiment_sizes):
+        raise ValueError("Configured sizes must contain integers >= 2.")
+    if not experiment_seeds or any(isinstance(seed, (bool, np.bool_)) or not isinstance(seed, (int, np.integer)) or seed < 0 for seed in experiment_seeds):
+        raise ValueError("Configured seeds must contain nonnegative integers.")
+    if any(isinstance(k, (bool, np.bool_)) or not isinstance(k, (int, np.integer)) or k < 1 for k in neighbors):
+        raise ValueError("Configured neighbors must contain positive integers.")
+    if not np.isscalar(tol) or not np.isfinite(tol) or tol <= 0:
+        raise ValueError("tol must be finite and > 0.")
+    if isinstance(max_iteration, (bool, np.bool_)) or not isinstance(max_iteration, (int, np.integer)) or max_iteration < 1:
+        raise ValueError("max_iteration must be a positive integer.")
+    for name, values in [("sizes", experiment_sizes), ("seeds", experiment_seeds), ("neighbors", neighbors)]:
+        if len(set(values)) != len(values):
+            raise ValueError(f"Duplicate configured {name} would repeat experiment cases.")
+    output_dir = Path(output_dir) if output_dir is not None else DEFAULT_OUTPUT / mode
+    output_dir.mkdir(parents=True, exist_ok=True)
     metadata = {
-        "sizes": args.sizes, "q_values": args.q_values, "seeds": args.seeds,
-        "tol": args.tol, "max_iter": args.max_iter,
+        "mode": mode,
+        "configured_q_values": configured_q,
+        "q_selection": "all configured q values" if mode == "q-variants" else "configured q_target >= 1 (including boundary q=1)",
+        "sizes": experiment_sizes, "q_values": selected_q, "seeds": experiment_seeds,
+        "tol": tol, "max_iter": max_iteration,
         "neighbors": neighbors,
-        "expected_cases": sum(1 + sum(k < n - 1 for k in neighbors) for n in args.sizes) * len(args.seeds) * len(args.q_values),
-        "skipped_neighbors_by_size": {str(n): [k for k in neighbors if k >= n - 1] for n in args.sizes},
-        "families": ["dense"] + [f"sparse_k{k}" for k in neighbors if any(k < n - 1 for n in args.sizes)],
+        "expected_cases": sum(1 + sum(k < n - 1 for k in neighbors) for n in experiment_sizes) * len(experiment_seeds) * len(selected_q),
+        "skipped_neighbors_by_size": {str(n): [k for k in neighbors if k >= n - 1] for n in experiment_sizes},
+        "families": ["dense"] + [f"sparse_k{k}" for k in neighbors if any(k < n - 1 for n in experiment_sizes)],
         "sparsity_definition": "Off-diagonal density = k/(n-1); sparsity = 1-density. Diagonal excluded.",
         "sparse_generation": "Nested row permutations from independent SeedSequence([seed,n,9173]); retained weights match dense. Supports and weights fixed across q. k>=n-1 skipped (dense already included).",
         "norm": "infinity", "stopping_rule": "||b-Ax||_inf / max(1, ||b||_inf) <= tol",
@@ -116,9 +147,9 @@ def main(argv=None):
         "python": platform.python_version(), "numpy": np.__version__,
         "pandas": pd.__version__, "matplotlib": version("matplotlib"),
     }
-    (args.output_dir / "config.json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")
-    results_path = args.output_dir / "results.csv"
-    history_path = args.output_dir / "convergence_history.csv"
+    (output_dir / "config.json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+    results_path = output_dir / "results.csv"
+    history_path = output_dir / "convergence_history.csv"
     records = []
     # Write after each seed so completed runs remain available if interrupted.
     with results_path.open("w", newline="", encoding="utf-8") as result_file, history_path.open("w", newline="", encoding="utf-8") as history_file:
@@ -126,9 +157,9 @@ def main(argv=None):
         history_writer = csv.writer(history_file)
         result_writer.writeheader()
         history_writer.writerow(HISTORY_COLUMNS)
-        for n in args.sizes:
-            for seed in args.seeds:
-                results = run_experiments_on_size(n, q_values=args.q_values, seeds=[seed], neighbors=neighbors, tol=args.tol, max_iteration=args.max_iter, verbose=not args.quiet)
+        for n in experiment_sizes:
+            for seed in experiment_seeds:
+                results = run_experiments_on_size(n, q_values=selected_q, seeds=[seed], neighbors=neighbors, tol=tol, max_iteration=max_iteration, verbose=verbose)
                 for result in results:
                     record = result_record(result)
                     records.append(record)
@@ -139,12 +170,32 @@ def main(argv=None):
                 history_file.flush()
     frame = pd.DataFrame(records, columns=RESULT_COLUMNS)
     summary = summarize(frame)
-    summary.to_csv(args.output_dir / "summary.csv", index=False)
-    save_plots(summary, history_path, args.output_dir, example_seed=args.seeds[0])
-    print(f"Saved {len(frame)} cases to {args.output_dir.resolve()}")
+    summary.to_csv(output_dir / "summary.csv", index=False)
+    save_plots(summary, history_path, output_dir, example_seed=experiment_seeds[0])
+    print(f"Saved {len(frame)} cases to {output_dir.resolve()}")
     print(frame["status"].value_counts().to_string())
     return frame
 
 
+def main():
+    # Validate the second selection before starting an expensive first run.
+    select_q_values("non-diag-dominance")
+    results = {}
+    for step, mode in enumerate(MODES, start=1):
+        print(f"[{step}/3] Running {mode}...", flush=True)
+        results[mode] = run_pipeline(mode, verbose=DEFAULT_VERBOSE)
+    print("[3/3] Building compact report figures and tables...", flush=True)
+    results["final"] = build_report_bundle(
+        DEFAULT_OUTPUT / "q-variants",
+        DEFAULT_OUTPUT / "non-diag-dominance",
+        DEFAULT_OUTPUT / "final",
+    )
+    print(f"Report files saved to {results['final'].resolve()}", flush=True)
+    return results
+
+
+
 if __name__ == "__main__":
+    if len(sys.argv) != 1:
+        raise SystemExit("Run program.py without arguments. Edit experiment settings in prepare.py or program.py.")
     main()

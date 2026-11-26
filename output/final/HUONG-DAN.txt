@@ -1,0 +1,12 @@
+BỘ HÌNH VÀ SỐ LIỆU GỌN CHO BÁO CÁO
+
+01_q_vs_iterations.png: câu hỏi 1. So sánh q và số vòng lặp tại n=100; dải màu là khoảng tứ phân vị. Số vòng chỉ tổng hợp các lần đạt ngưỡng; đọc cùng ô tỷ lệ đạt ngưỡng.
+02_error_vs_iterations.png: quá trình giảm/tăng sai số tại n=100, bộ sparse_k2, seed=42. Các đường dùng cùng phần ngoài đường chéo. Sai số hiển thị trong [1e-12,10]; tam giác đánh dấu vượt ngưỡng trên, không sửa dữ liệu thật. Ngưỡng dừng dựa vào phần dư, không phải sai số nghiệm.
+03_non_diag_dominance.png: câu hỏi 2. Bán kính phổ và tỷ lệ đạt ngưỡng cho q>=1 tại n=100; q=1 chỉ là biên không chéo trội nghiêm ngặt. Trung vị rho dưới 1 không bảo đảm mọi seed có rho dưới 1.
+
+q_summary.csv: bảng thống kê ở kích thước được chọn, không gộp các bộ thưa với bộ đặc.
+convergence_by_regime.csv: số lần đạt ngưỡng theo q<1, q=1, q>1, dùng toàn bộ kích thước.
+non_diagonal_examples.csv: tối đa sáu lần chạy thực tế minh họa đạt/không đạt ngưỡng khi q>=1, ưu tiên q>1. numerical_error và max_iterations là trạng thái tính toán; max_iterations không tự chứng minh phân kỳ.
+
+Hai bộ có 1360 trường hợp q>=1 trùng nhau. Đã đối chiếu toàn bộ kết quả trùng, chỉ đếm một lần trong bảng tổng hợp: 3740 trường hợp duy nhất, không phải 5100 mẫu độc lập.
+provenance.json ghi nguồn và quy tắc chọn hình. Hình dùng kích thước lớn nhất có ở cả hai bộ; ưu tiên bộ sparse_k2 và seed đầu tiên trong cấu hình, không chọn lại seed theo kết quả đẹp.

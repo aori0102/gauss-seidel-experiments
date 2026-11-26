@@ -1,0 +1,26 @@
+{
+  "sources": {
+    "q-variants": "../q-variants",
+    "non-diag-dominance": "../non-diag-dominance"
+  },
+  "source_cases": {
+    "q-variants": 3740,
+    "non-diag-dominance": 1360
+  },
+  "total_executions": 5100,
+  "unique_cases": 3740,
+  "overlapping_cases_verified_and_counted_once": 1360,
+  "report_size": 100,
+  "error_history_family": "sparse_k2",
+  "error_history_seed": 42,
+  "error_history_q_values": [
+    0.1,
+    0.9,
+    1.2,
+    1.8
+  ],
+  "error_display_limits": [
+    1e-12,
+    10.0
+  ]
+}
