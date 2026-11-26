@@ -1,0 +1,13 @@
+family,regime,runs,converged,convergence_rate,max_iterations,numerical_error
+dense,q<1,700,700,1.0,0,0
+dense,q=1,100,99,0.99,1,0
+dense,q>1,300,282,0.94,2,16
+sparse_k2,q<1,560,560,1.0,0,0
+sparse_k2,q=1,80,80,1.0,0,0
+sparse_k2,q>1,240,138,0.575,13,89
+sparse_k4,q<1,560,560,1.0,0,0
+sparse_k4,q=1,80,80,1.0,0,0
+sparse_k4,q>1,240,176,0.7333333333333333,14,50
+sparse_k8,q<1,560,560,1.0,0,0
+sparse_k8,q=1,80,80,1.0,0,0
+sparse_k8,q>1,240,240,1.0,0,0

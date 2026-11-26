@@ -1,4 +1,19 @@
 {
+  "mode": "non-diag-dominance",
+  "configured_q_values": [
+    0.1,
+    0.3,
+    0.5,
+    0.7,
+    0.9,
+    0.95,
+    0.99,
+    1.0,
+    1.05,
+    1.2,
+    1.8
+  ],
+  "q_selection": "configured q_target >= 1 (including boundary q=1)",
   "sizes": [
     3,
     16,
@@ -7,13 +22,6 @@
     100
   ],
   "q_values": [
-    0.1,
-    0.3,
-    0.5,
-    0.7,
-    0.9,
-    0.95,
-    0.99,
     1.0,
     1.05,
     1.2,
@@ -48,7 +56,7 @@
     4,
     8
   ],
-  "expected_cases": 3740,
+  "expected_cases": 1360,
   "skipped_neighbors_by_size": {
     "3": [
       2,

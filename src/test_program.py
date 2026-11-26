@@ -1,6 +1,8 @@
 from pathlib import Path
 import tempfile
 import unittest
+import json
+from unittest.mock import patch
 import numpy as np
 import pandas as pd
 import program as gs
@@ -10,6 +12,64 @@ import visualization
 
 
 class GaussSeidelTests(unittest.TestCase):
+    def test_mode_selection_preserves_grid_and_includes_boundary(self):
+        configured = [.5, 1., 1.05, 1.2, 1.8]
+        self.assertEqual(gs.select_q_values("q-variants", configured), configured)
+        self.assertEqual(gs.select_q_values("non-diag-dominance", configured), [1., 1.05, 1.2, 1.8])
+        self.assertEqual(configured, [.5, 1., 1.05, 1.2, 1.8])
+        self.assertEqual(len(gs.select_q_values("q-variants")), 11)
+        self.assertEqual(len(gs.select_q_values("non-diag-dominance")), 4)
+
+    def test_invalid_mode_or_empty_selection_fails_before_output(self):
+        for mode, grid in [("invalid", [.5, 1.]), ("non-diag-dominance", [.1, .9]), ("q-variants", []), ("q-variants", [1., 1.]), ("q-variants", [np.nan])]:
+            with self.subTest(mode=mode, grid=grid), self.assertRaises(ValueError):
+                gs.select_q_values(mode, grid)
+
+    def test_main_runs_both_modes_then_report_without_arguments(self):
+        events = []
+        def run(mode, **kwargs):
+            events.append(mode)
+            return mode
+        def report(q_dir, non_dir, final_dir):
+            events.append("final")
+            self.assertEqual(q_dir.name, "q-variants")
+            self.assertEqual(non_dir.name, "non-diag-dominance")
+            self.assertEqual(final_dir.name, "final")
+            return final_dir
+        with patch.object(gs, "run_pipeline", side_effect=run), patch.object(gs, "build_report_bundle", side_effect=report):
+            result = gs.main()
+        self.assertEqual(events, ["q-variants", "non-diag-dominance", "final"])
+        self.assertEqual(result["final"], gs.DEFAULT_OUTPUT/"final")
+        with patch.object(gs, "run_pipeline", side_effect=RuntimeError("failed")), patch.object(gs, "build_report_bundle") as report:
+            with self.assertRaises(RuntimeError):
+                gs.main()
+            report.assert_not_called()
+
+    def test_no_argument_pipeline_exports_two_runs_and_three_report_figures(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with patch.object(gs, "DEFAULT_OUTPUT", root), patch.object(gs, "sizes", [3]), patch.object(gs, "q_experiments", [.5, 1., 1.2]), patch.object(gs, "DEFAULT_SEEDS", [42]), patch.object(gs, "DEFAULT_NEIGHBORS", []):
+                runs = gs.main()
+            all_cases = runs["q-variants"]
+            subset = runs["non-diag-dominance"]
+            self.assertEqual(len(all_cases), 3)
+            self.assertEqual(len(subset), 2)
+            pd.testing.assert_frame_equal(all_cases[all_cases.q_target >= 1].reset_index(drop=True), subset)
+            for mode, expected in [("q-variants", [.5, 1., 1.2]), ("non-diag-dominance", [1., 1.2])]:
+                folder = root/mode
+                config = json.loads((folder/"config.json").read_text())
+                self.assertEqual(config["mode"], mode)
+                self.assertEqual(config["q_values"], expected)
+                history = pd.read_csv(folder/"convergence_history.csv")
+                self.assertEqual(sorted(history.q_target.unique()), expected)
+            figures = sorted(path.name for path in (root/"final").glob("*.png"))
+            self.assertEqual(figures, ["01_q_vs_iterations.png", "02_error_vs_iterations.png", "03_non_diag_dominance.png"])
+            provenance = json.loads((root/"final/provenance.json").read_text())
+            self.assertEqual(provenance["total_executions"], 5)
+            self.assertEqual(provenance["unique_cases"], 3)
+            self.assertEqual(provenance["overlapping_cases_verified_and_counted_once"], 2)
+            self.assertEqual(pd.read_csv(root/"final/convergence_by_regime.csv").runs.sum(), 3)
+
     def test_sparse_degrees_nested_supports_and_q_control(self):
         cases = list(prepare.prepare_experiments(10, q_values=[.5, 1.2], seeds=[42], neighbors=[2, 4, 8]))
         self.assertEqual(len(cases), 8)
@@ -70,7 +130,7 @@ class GaussSeidelTests(unittest.TestCase):
 
     def test_sparse_pipeline_exports_family_plots_and_unambiguous_history(self):
         with tempfile.TemporaryDirectory() as directory:
-            frame = gs.main(["--sizes", "6", "--q-values", ".5", "1.2", "--seeds", "42", "--neighbors", "2", "4", "--max-iter", "30", "--output-dir", directory, "--quiet"])
+            frame = gs.run_pipeline("q-variants", experiment_sizes=[6], q_values=[.5, 1.2], experiment_seeds=[42], neighbors=[2, 4], max_iteration=30, output_dir=Path(directory), verbose=False)
             self.assertEqual(len(frame), 6)
             self.assertFalse(frame.duplicated(["n", "seed", "family", "q_target"]).any())
             for folder in ["", "sparse_k2", "sparse_k4"]:
@@ -212,7 +272,7 @@ class GaussSeidelTests(unittest.TestCase):
 
     def test_pipeline_exports_data_history_config_and_three_plots(self):
         with tempfile.TemporaryDirectory() as directory:
-            frame = gs.main(["--sizes", "2", "3", "--q-values", ".5", "1.2", "--seeds", "42", "43", "--max-iter", "20", "--output-dir", directory, "--quiet"])
+            frame = gs.run_pipeline("q-variants", experiment_sizes=[2, 3], q_values=[.5, 1.2], experiment_seeds=[42, 43], max_iteration=20, output_dir=Path(directory), verbose=False)
             self.assertEqual(len(frame), 8)
             for name in ["results.csv", "summary.csv", "convergence_history.csv", "config.json", "q_vs_iterations.png", "q_vs_spectral_radius.png", "error_vs_iterations.png"]:
                 self.assertGreater((Path(directory) / name).stat().st_size, 0)
